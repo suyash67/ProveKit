@@ -5,6 +5,8 @@ use {
     std::fmt::Display,
 };
 
+use flame;
+
 const MODULUS: U256 =
     uint!(21888242871839275222246405745257275088548364400416034343698204186575808495617_U256);
 const MOD_INV: u64 = 14042775128853446655;
@@ -85,18 +87,43 @@ fn add_3(a: U256, b: U256, c: U256) -> U256 {
 }
 
 fn compress(l: U256, r: U256) -> U256 {
+    flame::start("inside_compress");
     let a = l;
+    flame::start("sq_1");
     let (l, r) = (add_2(r, square(l)), l);
+    flame::end("sq_1");
+    flame::start("sq_2");
     let (l, r) = (add_3(r, square(l), RC[0]), l);
+    flame::end("sq_2");
+    flame::start("bar_1");
     let (l, r) = (add_3(r, bar(l), RC[1]), l);
+    flame::end("bar_1");
+    flame::start("bar_2");
     let (l, r) = (add_3(r, bar(l), RC[2]), l);
+    flame::end("bar_2");
+    flame::start("sq_3");
     let (l, r) = (add_3(r, square(l), RC[3]), l);
+    flame::end("sq_3");
+    flame::start("sq_4");
     let (l, r) = (add_3(r, square(l), RC[4]), l);
+    flame::end("sq_4");
+    flame::start("bar_3");
     let (l, r) = (add_3(r, bar(l), RC[5]), l);
+    flame::end("bar_3");
+    flame::start("bar_4");
     let (l, r) = (add_3(r, bar(l), RC[6]), l);
+    flame::end("bar_4");
+    flame::start("sq_5");
     let (l, r) = (add_3(r, square(l), RC[7]), l);
+    flame::end("sq_5");
+    flame::start("sq_6");
     let (l, _) = (add_2(r, square(l)), l);
-    add_2(l, a)
+    flame::end("sq_6");
+    flame::start("add");
+    let out = add_2(l, a);
+    flame::end("add");
+    flame::end("inside_compress");
+    out
 }
 
 fn square(n: U256) -> U256 {
@@ -112,7 +139,7 @@ fn bar(mut n: U256) -> U256 {
     left.swap_with_slice(right);
 
     // Apply SBox.
-    bytes.iter_mut().for_each(|b| *b = sbox(*b));
+    bytes.iter_mut().for_each(|b| *b = SBOX_TABLE[*b as usize]);
 
     // Recompose and modular reduce
     reduce(n)
@@ -124,7 +151,13 @@ fn sbox(v: u8) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, ruint::uint};
+    use {super::*, rand::Rng, ruint::uint};
+
+    fn random_u256() -> U256 {
+        let mut rng = rand::thread_rng();
+        let random_bytes: [u8; 32] = rng.gen();
+        reduce(U256::from_be_bytes(random_bytes))
+    }
 
     #[test]
     fn test_sbox() {
@@ -137,6 +170,21 @@ mod tests {
         for i in 0u8..=255 {
             assert_eq!(sbox(i), SBOX_TABLE[i as usize]);
         }
+    }
+
+    #[test]
+    fn test_profiling() {
+        let r1 = random_u256();
+        let r2 = random_u256();
+
+        flame::start("generate hash");
+        compress(r1, r2);
+        flame::end("generate hash");
+
+        // Dump flame data to a file
+        flame::start("dump flamegraph");
+        flame::end("dump flamegraph");
+        flame::dump_html(&mut std::fs::File::create("flamegraph.html").unwrap()).unwrap();
     }
 
     #[test]
