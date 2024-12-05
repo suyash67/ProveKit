@@ -2,17 +2,17 @@ mod blake2_icicle;
 mod blake3;
 mod blake3_naive;
 mod keccak_icicle;
-mod keccak_neon;
+// mod keccak_neon;
 mod mod_ring;
 mod poseidon2_bn254_plonky3;
 mod poseidon2_bn254_ruint;
 mod poseidon2_bn254_zkhash;
 mod poseidon_icicle;
-mod sha256_neon;
+// mod sha256_neon;
 // mod skyscraper_bn254_portable;
 mod skyscraper_bn254_ref;
 mod skyscraper_bn254_ruint;
-mod skyscraper_neon;
+// mod skyscraper_neon;
 
 use {
     core::{
@@ -89,9 +89,9 @@ fn main() {
         Box::new(blake3_naive::Blake3Naive),
         Box::new(blake3::Blake3::new()),
         Box::new(keccak_icicle::KeccakIcicle::new()),
-        Box::new(keccak_neon::Keccak),
-        Box::new(keccak_neon::K12),
-        Box::new(sha256_neon::Sha256),
+        // Box::new(keccak_neon::Keccak),
+        // Box::new(keccak_neon::K12),
+        // Box::new(sha256_neon::Sha256),
         Box::new(poseidon_icicle::PoseidonIcicle::new()),
         Box::new(poseidon2_bn254_plonky3::Poseidon2Bn254Plonky3::new()),
         Box::new(poseidon2_bn254_ruint::Poseidon2::new()),
