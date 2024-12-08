@@ -2,7 +2,7 @@ use {
     crate::SmolHasher,
     hex_literal::hex,
     ruint::{aliases::U256, uint},
-    std::fmt::Display,
+    std::{fmt::Display, u64},
 };
 
 const MODULUS: U256 =
@@ -19,6 +19,16 @@ const RC: [U256; 8] = uint! {[
     16971509144034029782226530622087626979814683266929655790026304723118124142299_U256,
 ]};
 const SBOX: [u8; 256] = hex!("00020416080a2c2e10121406585a5c5e20222436282a0c0eb0b2b4a6b8babcbe40424456484a6c6e50525446181a1c1e61636577696b4d4f71737567797b7d7f80828496888aacae90929486d8dadcdea0a2a4b6a8aa8c8e30323426383a3c3ec2c0c6d4cac8eeecd2d0d6c49a989e9ce2e0e6f4eae8ceccf2f0f6e4faf8fefc010b051709032d2f111b150759535d5f212b253729230d0fb1bbb5a7b9b3bdbf414b455749436d6f515b554719131d1f606a647668624c4e707a746678727c7e858b81978d83a9af959b9187ddd3d9dfa5aba1b7ada3898f353b31273d33393fc5cbc1d7cdc3e9efd5dbd1c79d93999fe5ebe1f7ede3c9cff5fbf1e7fdf3f9ff");
+
+const SBOX_SHIFT_1: u64 = 0x8080808080808080;
+const SBOX_SHIFT_2: u64 = 0xc0c0c0c0c0c0c0c0;
+const SBOX_SHIFT_3: u64 = 0xe0e0e0e0e0e0e0e0;
+const SBOX_SHIFT_4: u64 = 0xf0f0f0f0f0f0f0f0;
+
+const SBOX_SHIFT_1_BAR: u64 = !SBOX_SHIFT_1;
+const SBOX_SHIFT_2_BAR: u64 = !SBOX_SHIFT_2;
+const SBOX_SHIFT_3_BAR: u64 = !SBOX_SHIFT_3;
+const SBOX_SHIFT_4_BAR: u64 = !SBOX_SHIFT_4;
 
 const SBOX_TABLE: [u8; 256] = [
     0, 2, 4, 22, 8, 10, 44, 46, 16, 18, 20, 6, 88, 90, 92, 94, 32, 34, 36, 54, 40, 42, 12, 14, 176,
@@ -99,8 +109,36 @@ fn compress(l: U256, r: U256) -> U256 {
     add_2(l, a)
 }
 
+fn compress_prime(l: U256, r: U256) -> U256 {
+    let a = l;
+    let (l, r) = (add_2(r, square(l)), l);
+    let (l, r) = (add_3(r, square(l), RC[0]), l);
+    let (l, r) = (add_3(r, bar_on_limbs(l), RC[1]), l);
+    let (l, r) = (add_3(r, bar_on_limbs(l), RC[2]), l);
+    let (l, r) = (add_3(r, square(l), RC[3]), l);
+    let (l, r) = (add_3(r, square(l), RC[4]), l);
+    let (l, r) = (add_3(r, bar_on_limbs(l), RC[5]), l);
+    let (l, r) = (add_3(r, bar_on_limbs(l), RC[6]), l);
+    let (l, r) = (add_3(r, square(l), RC[7]), l);
+    let (l, _) = (add_2(r, square(l)), l);
+    add_2(l, a)
+}
+
 fn square(n: U256) -> U256 {
     n.square_redc(MODULUS, MOD_INV)
+}
+
+fn bar_on_limbs(mut n: U256) -> U256 {
+    let n_limbs = unsafe { n.as_limbs_mut() };
+
+    // Rotate left by 2 places (to swap the limbs)
+    n_limbs.rotate_left(2);
+
+    // Apply sbox
+    n_limbs.iter_mut().for_each(|limb| *limb = sbox_big(*limb));
+
+    // Recompose and modular reduce
+    reduce(n)
 }
 
 fn bar(mut n: U256) -> U256 {
@@ -122,9 +160,32 @@ fn sbox(v: u8) -> u8 {
     (v ^ ((!v).rotate_left(1) & v.rotate_left(2) & v.rotate_left(3))).rotate_left(1)
 }
 
+fn sbox_big(input: u64) -> u64 {
+    let input_1_bit = input & SBOX_SHIFT_1;
+    let input_2_bit = input & SBOX_SHIFT_2;
+    let input_3_bit = input & SBOX_SHIFT_3;
+    let input_4_bit = input & SBOX_SHIFT_4;
+    let in_rotate_left_1 = ((input & SBOX_SHIFT_1_BAR) << 1) ^ (input_1_bit >> 7);
+    let in_rotate_left_2 = ((input & SBOX_SHIFT_2_BAR) << 2) ^ (input_2_bit >> 6);
+    let in_rotate_left_3 = ((input & SBOX_SHIFT_3_BAR) << 3) ^ (input_3_bit >> 5);
+    let in_rotate_left_4 = ((input & SBOX_SHIFT_4_BAR) << 4) ^ (input_4_bit >> 4);
+
+    in_rotate_left_1 ^ ((in_rotate_left_2 ^ u64::MAX) & in_rotate_left_3 & in_rotate_left_4)
+}
+
+// WARNING: Just for testing
+fn sbox_dist(v: u8) -> u8 {
+    v.rotate_left(1) ^ ((!v).rotate_left(2) & v.rotate_left(3) & v.rotate_left(4))
+}
+
+// WARNING: Just for testing
+fn bitop(v: u8) -> u8 {
+    (!v).rotate_left(1) & v.rotate_left(2) & v.rotate_left(3)
+}
+
 #[cfg(test)]
 mod tests {
-    use {super::*, ruint::uint};
+    use {super::*, ruint::uint, std::collections::HashSet};
 
     #[test]
     fn test_sbox() {
@@ -136,7 +197,31 @@ mod tests {
     fn test_sbox_table() {
         for i in 0u8..=255 {
             assert_eq!(sbox(i), SBOX_TABLE[i as usize]);
+            assert_eq!(sbox(i), sbox_dist(i));
         }
+    }
+
+    #[test]
+    fn test_sbox_large() {
+        let number: u64 = 0x1122334455667788;
+        let mut output_bytes: [u8; 8] = number.to_be_bytes();
+        output_bytes.iter_mut().for_each(|b| *b = sbox_dist(*b));
+        assert_eq!(output_bytes, sbox_big(number).to_be_bytes());
+    }
+
+    #[test]
+    fn test_bitop_table() {
+        let mut unique_values = HashSet::new();
+        for i in 0u8..=255 {
+            println!("b({}) = {}", i, bitop(i));
+            unique_values.insert(bitop(i));
+        }
+
+        // Print the unique values
+        let mut unique_vec: Vec<u8> = unique_values.into_iter().collect();
+        unique_vec.sort();
+        println!("unique size = {}", unique_vec.len());
+        println!("Unique values: {:?}", unique_vec);
     }
 
     #[test]
@@ -168,6 +253,22 @@ mod tests {
     }
 
     #[test]
+    fn test_bar_on_limbs() {
+        uint! {
+            assert_eq!(bar(0_U256), bar_on_limbs(0_U256));
+            assert_eq!(bar(1_U256), bar_on_limbs(1_U256));
+            assert_eq!(bar(2_U256), bar_on_limbs(2_U256));
+            assert_eq!(
+                bar(
+                    4111585712030104139416666328230194227848755236259444667527487224433891325648_U256
+                ),
+                bar_on_limbs(
+                    4111585712030104139416666328230194227848755236259444667527487224433891325648_U256
+                ));
+        }
+    }
+
+    #[test]
     fn test_compress() {
         uint! {
             assert_eq!(compress(
@@ -175,6 +276,22 @@ mod tests {
                 9813154100006487150380270585621895148484502414032888228750638800367218873447_U256,
             ),
             3583228880285179354728993622328037400470978495633822008876840172083178912457_U256
+            );
+        }
+    }
+
+    #[test]
+    fn test_compress_prime() {
+        uint! {
+            assert_eq!(
+            compress(
+                21614608883591910674239883101354062083890746690626773887530227216615498812963_U256,
+                9813154100006487150380270585621895148484502414032888228750638800367218873447_U256,
+            ),
+            compress_prime(
+                21614608883591910674239883101354062083890746690626773887530227216615498812963_U256,
+                9813154100006487150380270585621895148484502414032888228750638800367218873447_U256,
+            )
             );
         }
     }
