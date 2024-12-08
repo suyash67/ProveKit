@@ -5,6 +5,8 @@ use {
     std::fmt::Display,
 };
 
+use tracing;
+
 const MODULUS: U256 =
     uint!(21888242871839275222246405745257275088548364400416034343698204186575808495617_U256);
 const MOD_INV: u64 = 14042775128853446655;
@@ -70,6 +72,7 @@ fn reduce(mut n: U256) -> U256 {
     }
 }
 
+#[tracing::instrument(skip_all, name = "add2")]
 fn add_2(a: U256, b: U256) -> U256 {
     let (sum, carry) = a.overflowing_add(b);
     let (reduced, borrow) = sum.overflowing_sub(MODULUS);
@@ -80,10 +83,12 @@ fn add_2(a: U256, b: U256) -> U256 {
     }
 }
 
+#[tracing::instrument(skip_all, name = "add3")]
 fn add_3(a: U256, b: U256, c: U256) -> U256 {
     add_2(add_2(a, b), c)
 }
 
+#[tracing::instrument(skip_all, name = "compress")]
 fn compress(l: U256, r: U256) -> U256 {
     let a = l;
     let (l, r) = (add_2(r, square(l)), l);
@@ -99,10 +104,12 @@ fn compress(l: U256, r: U256) -> U256 {
     add_2(l, a)
 }
 
+#[tracing::instrument(skip_all, name = "sq")]
 fn square(n: U256) -> U256 {
     n.square_redc(MODULUS, MOD_INV)
 }
 
+#[tracing::instrument(skip_all, name = "bar")]
 fn bar(mut n: U256) -> U256 {
     // Decompose into raw bytes.
     let bytes = unsafe { n.as_le_slice_mut() };
@@ -112,19 +119,32 @@ fn bar(mut n: U256) -> U256 {
     left.swap_with_slice(right);
 
     // Apply SBox.
-    bytes.iter_mut().for_each(|b| *b = sbox(*b));
+    bytes.iter_mut().for_each(|b| *b = SBOX_TABLE[*b as usize]);
 
     // Recompose and modular reduce
     reduce(n)
 }
 
+#[tracing::instrument(skip_all, name = "sbox")]
 fn sbox(v: u8) -> u8 {
     (v ^ ((!v).rotate_left(1) & v.rotate_left(2) & v.rotate_left(3))).rotate_left(1)
 }
 
 #[cfg(test)]
 mod tests {
-    use {super::*, ruint::uint};
+    use {
+        super::*,
+        rand::Rng,
+        ruint::uint,
+        tracing_chrome::ChromeLayerBuilder,
+        tracing_subscriber::{layer::SubscriberExt, registry},
+    };
+
+    fn random_u256() -> U256 {
+        let mut rng = rand::thread_rng();
+        let random_bytes: [u8; 32] = rng.gen();
+        reduce(U256::from_be_bytes(random_bytes))
+    }
 
     #[test]
     fn test_sbox() {
@@ -151,6 +171,25 @@ mod tests {
                 square(1104450765605124869545290932753078120560901577733272073477890658487831733222_U256),
                 20498050724266033890829404465405035543297153733520482423774420418741549228506_U256);
         }
+    }
+
+    #[test]
+    fn test_tracer() {
+        // Create a Chrome-compatible tracing layer
+        let (chrome_layer, guard) = ChromeLayerBuilder::new()
+            .file("perfetto_trace_table.json") // Specify JSON output file
+            .build();
+
+        // Set up the subscriber with the Chrome layer
+        let subscriber = registry().with(chrome_layer);
+        tracing::subscriber::set_global_default(subscriber)
+            .expect("Failed to set global subscriber");
+
+        let r1 = random_u256();
+        let r2 = random_u256();
+        compress(r1, r2);
+
+        drop(guard);
     }
 
     #[test]

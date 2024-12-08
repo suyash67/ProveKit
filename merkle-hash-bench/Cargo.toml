@@ -26,6 +26,9 @@ icicle-core = { git = "https://github.com/ingonyama-zk/icicle.git", branch = "ma
 icicle-runtime = { git = "https://github.com/ingonyama-zk/icicle.git", branch = "main" }
 icicle-hash = { git = "https://github.com/ingonyama-zk/icicle.git", branch = "main" }
 icicle-bn254 = { git = "https://github.com/ingonyama-zk/icicle.git", branch = "main" }
+tracing-chrome = "0.7.2"
+tracing = "0.1"
+tracing-subscriber = "0.3"
 
 [patch.crates-io]
 ruint = { path = "../../recmo/uint" }
