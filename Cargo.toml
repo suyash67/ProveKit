@@ -61,4 +61,5 @@ noirc_artifacts = { git = "https://github.com/noir-lang/noir", version = "1.0.0-
 # noirc_artifacts = { path = "../../noir-lang/noir/tooling/noirc_artifacts" }
 
 [patch.crates-io]
-ruint = { git = "https://github.com/recmo/uint", branch = "recmo/montgomery" }
+# ruint = { git = "https://github.com/recmo/uint", branch = "recmo/montgomery" }
+ruint = { path = "../uint" }

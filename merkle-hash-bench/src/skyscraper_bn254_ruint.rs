@@ -125,7 +125,8 @@ fn compress_prime(l: U256, r: U256) -> U256 {
 }
 
 fn square(n: U256) -> U256 {
-    n.square_redc(MODULUS, MOD_INV)
+    n.square_redc_cios_optimal::<10>(MODULUS, MOD_INV)
+    // n.square_redc(MODULUS, MOD_INV)
 }
 
 fn bar_on_limbs(mut n: U256) -> U256 {

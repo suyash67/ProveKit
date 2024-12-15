@@ -28,4 +28,4 @@ zkhash = "0.2.0"
 # icicle-bn254 = { git = "https://github.com/ingonyama-zk/icicle.git", branch = "main" }
 
 [patch.crates-io]
-ruint = { path = "../../recmo/uint" }
+ruint = { path = "../uint" }
